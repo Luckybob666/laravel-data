@@ -20,6 +20,7 @@ class UploadRecord extends Model
         'country',
         'industry',
         'remarks',
+        'domain',
         'total_count',
         'success_count',
         'duplicate_count',

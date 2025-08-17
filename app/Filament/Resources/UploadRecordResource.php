@@ -60,6 +60,10 @@ class UploadRecordResource extends Resource
                             ->label('行业')
                             ->maxLength(255),
                         
+                        TextInput::make('domain')
+                            ->label('域名')
+                            ->maxLength(255),
+                        
                         Textarea::make('remarks')
                             ->label('备注')
                             ->rows(3)
@@ -71,6 +75,7 @@ class UploadRecordResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->recordUrl(null)
             ->columns([
                 TextColumn::make('id')
                     ->label('上传ID')
@@ -83,6 +88,11 @@ class UploadRecordResource extends Resource
                 
                 TextColumn::make('industry')
                     ->label('行业')
+                    ->searchable()
+                    ->sortable(),
+                
+                TextColumn::make('domain')
+                    ->label('域名')
                     ->searchable()
                     ->sortable(),
                 

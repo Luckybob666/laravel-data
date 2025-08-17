@@ -21,13 +21,13 @@ class EditUploadRecord extends EditRecord
     protected function mutateFormDataBeforeFill(array $data): array
     {
         // 只允许编辑特定字段
-        return array_intersect_key($data, array_flip(['country', 'industry', 'remarks']));
+        return array_intersect_key($data, array_flip(['country', 'industry', 'domain', 'remarks']));
     }
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
         // 只保存允许编辑的字段
-        return array_intersect_key($data, array_flip(['country', 'industry', 'remarks']));
+        return array_intersect_key($data, array_flip(['country', 'industry', 'domain', 'remarks']));
     }
 
     protected function afterSave(): void
@@ -35,10 +35,9 @@ class EditUploadRecord extends EditRecord
         // 记录活动日志
         ActivityLog::log(
             'update',
-            "更新上传记录：{$this->record->original_filename}",
+            "更新上传记录：上传ID {$this->record->id}",
             [
                 'upload_record_id' => $this->record->id,
-                'filename' => $this->record->original_filename,
             ],
             $this->record
         );
