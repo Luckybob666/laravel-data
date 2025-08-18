@@ -16,6 +16,7 @@ use Maatwebsite\Excel\Facades\Excel;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
+use Maatwebsite\Excel\Concerns\WithChunkReading;
 use Illuminate\Support\Facades\Storage;
 use Carbon\Carbon;
 
@@ -39,6 +40,8 @@ class ProcessFileDownload implements ShouldQueue
         $this->userId = $userId;
         $this->dataType = $dataType;
         $this->records = $records;
+        $this->timeout = 3600; // 60分钟超时
+        $this->tries = 3; // 重试3次
     }
 
     /**
@@ -47,6 +50,10 @@ class ProcessFileDownload implements ShouldQueue
     public function handle(): void
     {
         try {
+            // 增加内存限制到20GB
+            ini_set('memory_limit', '20G');
+            ini_set('max_execution_time', 7200); // 2小时超时
+            
             // 如果传入了记录集合，直接使用；否则构建查询
             if ($this->records) {
                 $records = $this->records;
@@ -88,53 +95,55 @@ class ProcessFileDownload implements ShouldQueue
                 $records = $query->get();
             }
 
-            // 准备导出数据
-            $exportData = [];
-            $headers = []; // 不添加表头
+            // 使用流式导出类
+            $exportClass = new class($records) implements FromArray, WithHeadings {
+                private $records;
+                private $allColumns = [];
 
-            // 获取所有可能的列标题（从data字段中获取原始表头）
-            $allColumns = [];
-            foreach ($records as $record) {
-                if ($record->data) {
-                    foreach ($record->data as $key => $value) {
-                        $allColumns[$key] = true;
-                    }
-                }
-            }
-
-            // 准备表头（使用data字段中的原始表头）
-            $headers = ['手机号码'];
-            foreach (array_keys($allColumns) as $column) {
-                $headers[] = $column;
-            }
-
-            // 添加表头到导出数据
-            $exportData[] = $headers;
-
-            // 准备数据行
-            foreach ($records as $record) {
-                $row = [$record->phone];
-
-                // 添加JSON数据列
-                foreach (array_keys($allColumns) as $column) {
-                    $row[] = $record->data[$column] ?? '';
-                }
-
-                $exportData[] = $row;
-            }
-
-            // 创建导出类
-            $exportClass = new class($exportData) implements FromArray {
-                private $data;
-
-                public function __construct($data)
+                public function __construct($records)
                 {
-                    $this->data = $data;
+                    $this->records = $records;
+                    $this->prepareColumns();
+                }
+
+                private function prepareColumns()
+                {
+                    // 获取所有可能的列标题（从data字段中获取原始表头）
+                    foreach ($this->records as $record) {
+                        if ($record->data) {
+                            foreach ($record->data as $key => $value) {
+                                $this->allColumns[$key] = true;
+                            }
+                        }
+                    }
                 }
 
                 public function array(): array
                 {
-                    return $this->data;
+                    $exportData = [];
+                    
+                    // 准备数据行
+                    foreach ($this->records as $record) {
+                        $row = [$record->phone];
+
+                        // 添加JSON数据列
+                        foreach (array_keys($this->allColumns) as $column) {
+                            $row[] = $record->data[$column] ?? '';
+                        }
+
+                        $exportData[] = $row;
+                    }
+
+                    return $exportData;
+                }
+
+                public function headings(): array
+                {
+                    $headers = ['手机号码'];
+                    foreach (array_keys($this->allColumns) as $column) {
+                        $headers[] = $column;
+                    }
+                    return $headers;
                 }
             };
 

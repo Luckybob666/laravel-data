@@ -13,6 +13,10 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Maatwebsite\Excel\Facades\Excel;
+use Maatwebsite\Excel\Concerns\ToArray;
+use Maatwebsite\Excel\Concerns\WithChunkReading;
+use Maatwebsite\Excel\Concerns\WithHeadingRow;
+use Maatwebsite\Excel\Concerns\WithBatchInserts;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 
@@ -22,7 +26,7 @@ class ProcessFileUpload implements ShouldQueue
 
     protected $uploadRecordId;
     protected $dataType;
-    protected $batchSize = 1000; // 批量插入大小
+    protected $batchSize = 500; // 减少批量大小，降低内存使用
 
     /**
      * Create a new job instance.
@@ -31,7 +35,7 @@ class ProcessFileUpload implements ShouldQueue
     {
         $this->uploadRecordId = $uploadRecordId;
         $this->dataType = $dataType;
-        $this->timeout = 1800; // 30分钟超时
+        $this->timeout = 3600; // 增加到60分钟超时
         $this->tries = 3; // 重试3次
     }
 
@@ -41,6 +45,10 @@ class ProcessFileUpload implements ShouldQueue
     public function handle(): void
     {
         try {
+            // 增加内存限制到20GB
+            ini_set('memory_limit', '20G');
+            ini_set('max_execution_time', 7200); // 2小时超时
+            
             // 根据数据类型选择模型
             $model = $this->dataType === 'raw' ? RawUploadRecord::class : UploadRecord::class;
             $uploadRecord = $model::findOrFail($this->uploadRecordId);
@@ -56,124 +64,130 @@ class ProcessFileUpload implements ShouldQueue
                 throw new \Exception("文件不存在：{$fullPath}");
             }
 
-            // 使用流式读取，减少内存使用
-            $data = Excel::toArray(new class implements \Maatwebsite\Excel\Concerns\ToArray {
-                public function array(array $array) {
-                    return $array;
-                }
-            }, $fullPath)[0];
+            // 使用流式读取器，增加批量大小
+            $reader = Excel::import(new class($this->dataType, $uploadRecord->id) implements ToArray, WithChunkReading, WithHeadingRow {
+                private $dataType;
+                private $uploadRecordId;
+                private $batchData = [];
+                private $successCount = 0;
+                private $duplicateCount = 0;
+                private $processedRows = 0;
+                private $batchSize = 2000; // 增加批量大小到2000
 
-            $totalCount = count($data);
-            $successCount = 0;
-            $duplicateCount = 0;
-
-            // 智能判断是否有表头
-            $hasHeader = false;
-            $headers = [];
-            if (!empty($data)) {
-                $firstRow = array_values($data[0]);
-                // 如果第一行第一列不是数字，且其他列也不是纯数字，则认为是表头
-                if (!is_numeric($firstRow[0]) && !preg_match('/^\d+$/', $firstRow[0])) {
-                    $hasHeader = true;
-                    $headers = $firstRow;
-                }
-            }
-
-            \Log::info("开始处理大文件", [
-                'upload_record_id' => $uploadRecord->id,
-                'data_type' => $this->dataType,
-                'file_path' => $fullPath,
-                'total_rows' => $totalCount,
-                'has_header' => $hasHeader,
-                'headers' => $headers,
-                'memory_usage' => memory_get_usage(true) / 1024 / 1024 . 'MB'
-            ]);
-
-            // 批量处理数据
-            $batchData = [];
-            $processedRows = 0;
-
-            foreach ($data as $index => $row) {
-                // 如果有表头，跳过第一行
-                if ($hasHeader && $index === 0) {
-                    continue;
+                public function __construct($dataType, $uploadRecordId)
+                {
+                    $this->dataType = $dataType;
+                    $this->uploadRecordId = $uploadRecordId;
                 }
 
-                $rowData = array_values($row);
-                if (empty($rowData[0])) continue; // 跳过空行
-
-                $phone = trim($rowData[0]);
-                if (empty($phone)) continue;
-
-                // 检查手机号码是否已存在（根据数据类型选择表）
-                $existingRecord = $this->checkExistingRecord($phone);
-                if ($existingRecord) {
-                    $duplicateCount++;
-                    continue;
-                }
-
-                // 提取其他列数据
-                $otherData = array_slice($rowData, 1);
-                $jsonData = [];
-                
-                if ($hasHeader && !empty($headers)) {
-                    // 如果有表头，使用原始字段名
-                    foreach ($otherData as $colIndex => $value) {
-                        if (!empty($value) && isset($headers[$colIndex + 1])) {
-                            $fieldName = trim($headers[$colIndex + 1]);
-                            if (!empty($fieldName)) {
-                                $jsonData[$fieldName] = $value;
-                            }
-                        }
-                    }
-                } else {
-                    // 如果没有表头，使用默认的列名
-                    foreach ($otherData as $colIndex => $value) {
-                        if (!empty($value)) {
-                            $jsonData["column_" . ($colIndex + 2)] = $value;
-                        }
+                public function array(array $array)
+                {
+                    foreach ($array as $row) {
+                        $this->processRow($row);
                     }
                 }
 
-                // 添加到批量数据
-                $batchData[] = [
-                    'phone' => $phone,
-                    'data' => json_encode($jsonData),
-                    'upload_record_id' => $uploadRecord->id,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
+                public function chunkSize(): int
+                {
+                    return 5000; // 增加分块大小到5000
+                }
 
-                $successCount++;
-                $processedRows++;
-
-                // 当达到批量大小时，执行批量插入
-                if (count($batchData) >= $this->batchSize) {
-                    $this->insertBatch($batchData);
-                    $batchData = [];
+                private function processRow($row)
+                {
+                    // 获取手机号码（第一列）
+                    $phone = null;
+                    $otherData = [];
                     
-                    // 记录进度
-                    \Log::info("批量插入完成", [
-                        'upload_record_id' => $uploadRecord->id,
-                        'data_type' => $this->dataType,
-                        'processed_rows' => $processedRows,
-                        'total_rows' => $totalCount,
-                        'memory_usage' => memory_get_usage(true) / 1024 / 1024 . 'MB'
-                    ]);
-                }
-            }
+                    // 处理不同的数据格式
+                    if (isset($row['phone'])) {
+                        $phone = trim($row['phone']);
+                        unset($row['phone']);
+                        $otherData = $row;
+                    } else {
+                        // 如果没有phone字段，取第一列作为手机号
+                        $values = array_values($row);
+                        if (!empty($values)) {
+                            $phone = trim($values[0]);
+                            $otherData = array_slice($values, 1);
+                        }
+                    }
 
-            // 插入剩余的数据
-            if (!empty($batchData)) {
-                $this->insertBatch($batchData);
-            }
+                    if (empty($phone)) {
+                        return;
+                    }
+
+                    // 检查手机号码是否已存在
+                    $existingRecord = $this->checkExistingRecord($phone);
+                    if ($existingRecord) {
+                        $this->duplicateCount++;
+                        return;
+                    }
+
+                    // 添加到批量数据
+                    $this->batchData[] = [
+                        'phone' => $phone,
+                        'data' => json_encode($otherData),
+                        'upload_record_id' => $this->uploadRecordId,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+
+                    $this->successCount++;
+                    $this->processedRows++;
+
+                    // 当达到批量大小时，执行批量插入
+                    if (count($this->batchData) >= $this->batchSize) {
+                        $this->insertBatch();
+                    }
+                }
+
+                private function checkExistingRecord($phone)
+                {
+                    if ($this->dataType === 'raw') {
+                        return RawDataRecord::where('phone', $phone)->first();
+                    } else {
+                        return DataRecord::where('phone', $phone)->first();
+                    }
+                }
+
+                private function insertBatch()
+                {
+                    if (!empty($this->batchData)) {
+                        $tableName = $this->dataType === 'raw' ? 'raw_data_records' : 'data_records';
+                        DB::table($tableName)->insert($this->batchData);
+                        $this->batchData = [];
+                        
+                        // 记录进度
+                        \Log::info("批量插入完成", [
+                            'upload_record_id' => $this->uploadRecordId,
+                            'data_type' => $this->dataType,
+                            'processed_rows' => $this->processedRows,
+                            'memory_usage' => memory_get_usage(true) / 1024 / 1024 / 1024 . 'GB'
+                        ]);
+                    }
+                }
+
+                public function getStats()
+                {
+                    // 插入剩余的数据
+                    $this->insertBatch();
+                    
+                    return [
+                        'success_count' => $this->successCount,
+                        'duplicate_count' => $this->duplicateCount,
+                        'processed_rows' => $this->processedRows,
+                    ];
+                }
+            }, $fullPath);
+
+            // 获取处理统计
+            $stats = $reader->getStats();
 
             // 更新上传记录
-            $statusClass = $this->dataType === 'raw' ? RawUploadRecord::class : UploadRecord::class;
             $uploadRecord->update([
-                'total_count' => $totalCount,
-                'success_count' => $successCount,
-                'duplicate_count' => $duplicateCount,
+                'total_count' => $stats['processed_rows'] + $stats['duplicate_count'],
+                'success_count' => $stats['success_count'],
+                'duplicate_count' => $stats['duplicate_count'],
                 'status' => $statusClass::STATUS_COMPLETED,
             ]);
 
@@ -186,13 +200,13 @@ class ProcessFileUpload implements ShouldQueue
             $dataTypeText = $this->dataType === 'raw' ? '粗数据' : '精数据';
             ActivityLog::log(
                 'upload',
-                "大文件上传处理完成（{$dataTypeText}），上传ID：{$uploadRecord->id}，总条数：{$totalCount}，成功：{$successCount}，重复：{$duplicateCount}",
+                "大文件上传处理完成（{$dataTypeText}），上传ID：{$uploadRecord->id}，总条数：{$stats['processed_rows']}，成功：{$stats['success_count']}，重复：{$stats['duplicate_count']}",
                 [
                     'upload_record_id' => $uploadRecord->id,
                     'data_type' => $this->dataType,
-                    'total_count' => $totalCount,
-                    'success_count' => $successCount,
-                    'duplicate_count' => $duplicateCount,
+                    'total_count' => $stats['processed_rows'] + $stats['duplicate_count'],
+                    'success_count' => $stats['success_count'],
+                    'duplicate_count' => $stats['duplicate_count'],
                     'processing_time' => microtime(true) - LARAVEL_START,
                 ],
                 $uploadRecord
@@ -201,10 +215,10 @@ class ProcessFileUpload implements ShouldQueue
             \Log::info("大文件处理完成", [
                 'upload_record_id' => $uploadRecord->id,
                 'data_type' => $this->dataType,
-                'total_count' => $totalCount,
-                'success_count' => $successCount,
-                'duplicate_count' => $duplicateCount,
-                'final_memory_usage' => memory_get_usage(true) / 1024 / 1024 . 'MB'
+                'total_count' => $stats['processed_rows'] + $stats['duplicate_count'],
+                'success_count' => $stats['success_count'],
+                'duplicate_count' => $stats['duplicate_count'],
+                'final_memory_usage' => memory_get_usage(true) / 1024 / 1024 / 1024 . 'GB'
             ]);
 
         } catch (\Exception $e) {
@@ -240,26 +254,5 @@ class ProcessFileUpload implements ShouldQueue
 
             throw $e;
         }
-    }
-
-    /**
-     * 检查记录是否已存在
-     */
-    private function checkExistingRecord($phone)
-    {
-        if ($this->dataType === 'raw') {
-            return RawDataRecord::where('phone', $phone)->first();
-        } else {
-            return DataRecord::where('phone', $phone)->first();
-        }
-    }
-
-    /**
-     * 批量插入数据
-     */
-    private function insertBatch(array $data): void
-    {
-        $tableName = $this->dataType === 'raw' ? 'raw_data_records' : 'data_records';
-        DB::table($tableName)->insert($data);
     }
 }
