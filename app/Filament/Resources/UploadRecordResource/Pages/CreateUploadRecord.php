@@ -53,15 +53,16 @@ class CreateUploadRecord extends CreateRecord
     protected function afterCreate(): void
     {
         // 分发队列任务处理文件
-        ProcessFileUpload::dispatch($this->record->id);
+        ProcessFileUpload::dispatch($this->record->id, 'refined');
 
         // 记录活动日志
         ActivityLog::log(
             'upload',
-            "上传文件：{$this->record->original_filename}",
+            "Filament上传精数据文件：{$this->record->original_filename}",
             [
                 'upload_record_id' => $this->record->id,
                 'filename' => $this->record->original_filename,
+                'data_type' => 'refined',
             ],
             $this->record
         );

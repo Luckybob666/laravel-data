@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\DataController;
+use App\Http\Controllers\Api\RawDataController;
 
 /*
 |--------------------------------------------------------------------------
@@ -19,7 +20,7 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-// 数据管理API路由
+// 精数据管理API路由
 Route::prefix('data')->group(function () {
     // 文件上传
     Route::post('/upload', [DataController::class, 'upload']);
@@ -37,4 +38,22 @@ Route::prefix('data')->group(function () {
     
     // 活动日志
     Route::get('/activity-logs', [DataController::class, 'activityLogs']);
+});
+
+// 粗数据管理API路由
+Route::prefix('raw-data')->group(function () {
+    // 文件上传
+    Route::post('/upload', [RawDataController::class, 'upload']);
+    
+    // 数据记录管理
+    Route::get('/records', [RawDataController::class, 'index']);
+    Route::get('/records/{id}', [RawDataController::class, 'show']);
+    Route::put('/records/{id}', [RawDataController::class, 'update']);
+    Route::delete('/records/{id}', [RawDataController::class, 'destroy']);
+    
+    // 数据下载
+    Route::post('/download', [RawDataController::class, 'download']);
+    
+    // 批量删除
+    Route::post('/batch-delete', [RawDataController::class, 'batchDelete']);
 });

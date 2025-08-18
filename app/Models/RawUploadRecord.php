@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class UploadRecord extends Model
+class RawUploadRecord extends Model
 {
     use HasFactory;
 
@@ -45,19 +45,11 @@ class UploadRecord extends Model
     }
 
     /**
-     * 获取精数据记录
-     */
-    public function dataRecords()
-    {
-        return $this->hasMany(DataRecord::class);
-    }
-
-    /**
      * 获取粗数据记录
      */
     public function rawDataRecords()
     {
-        return $this->hasMany(RawDataRecord::class);
+        return $this->hasMany(RawDataRecord::class, 'upload_record_id');
     }
 
     /**

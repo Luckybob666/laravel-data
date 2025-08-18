@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources;
 
-use App\Filament\Resources\UploadRecordResource\Pages;
-use App\Models\UploadRecord;
+use App\Filament\Resources\RawUploadRecordResource\Pages;
+use App\Models\RawUploadRecord;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -22,19 +22,17 @@ use App\Jobs\ProcessFileUpload;
 use App\Models\ActivityLog;
 use Illuminate\Support\Facades\Storage;
 
-class UploadRecordResource extends Resource
+class RawUploadRecordResource extends Resource
 {
-    protected static ?string $model = UploadRecord::class;
+    protected static ?string $model = RawUploadRecord::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-cloud-arrow-up';
     protected static ?string $navigationGroup = '数据仓库';
-    protected static ?string $navigationLabel = '精数据上传记录';
+    protected static ?string $navigationLabel = '粗数据上传记录';
+    protected static ?string $modelLabel = '粗数据上传记录';
+    protected static ?string $pluralModelLabel = '粗数据上传记录';
 
-    protected static ?string $modelLabel = '精数据上传记录';
-
-    protected static ?string $pluralModelLabel = '精数据上传记录';
-
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 2;
 
     public static function form(Form $form): Form
     {
@@ -48,8 +46,8 @@ class UploadRecordResource extends Resource
                             ->helperText('支持 .xlsx 和 .csv 格式，最大 500MB')
                             ->required()
                             ->disk('public')
-                            ->directory('uploads')
-                            ->visible(fn ($livewire) => $livewire instanceof \App\Filament\Resources\UploadRecordResource\Pages\CreateUploadRecord),
+                            ->directory('raw_uploads')
+                            ->visible(fn ($livewire) => $livewire instanceof \App\Filament\Resources\RawUploadRecordResource\Pages\CreateRawUploadRecord),
                     ])->columns(1),
 
                 Section::make('附加信息')
@@ -155,41 +153,41 @@ class UploadRecordResource extends Resource
             ->actions([
                 Tables\Actions\EditAction::make()
                     ->label('编辑')
-                    ->visible(fn (UploadRecord $record): bool => $record->isCompleted())
-                    ->before(function (UploadRecord $record) {
-                        ActivityLog::log('edit', "编辑上传记录：上传ID {$record->id}");
+                    ->visible(fn (RawUploadRecord $record): bool => $record->isCompleted())
+                    ->before(function (RawUploadRecord $record) {
+                        ActivityLog::log('edit', "编辑粗数据上传记录：上传ID {$record->id}");
                     }),
                 
                 Action::make('generate_download')
                     ->label('生成下载地址')
                     ->icon('heroicon-o-arrow-down-tray')
-                    ->visible(fn (UploadRecord $record): bool => $record->isCompleted())
-                    ->action(function (UploadRecord $record) {
+                    ->visible(fn (RawUploadRecord $record): bool => $record->isCompleted())
+                    ->action(function (RawUploadRecord $record) {
                         // 触发下载任务
                         \App\Jobs\ProcessFileDownload::dispatch(
                             ['upload_record_id' => $record->id],
                             'xlsx',
                             auth()->id(),
-                            'refined'
+                            'raw'
                         );
                         
-                        ActivityLog::log('download', "生成精数据下载地址：上传ID {$record->id}");
+                        ActivityLog::log('download', "生成粗数据下载地址：上传ID {$record->id}");
                         
                         // 显示成功消息
                         \Filament\Notifications\Notification::make()
                             ->title('生成任务已添加')
-                            ->body('文件正在后台生成中，完成后可在下载记录中查看。')
+                            ->body('粗数据文件正在后台生成中，完成后可在下载记录中查看。')
                             ->success()
                             ->send();
                     }),
                 
                 DeleteAction::make()
                     ->label('删除')
-                    ->before(function (UploadRecord $record) {
-                        // 删除该批次对应的所有数据记录
-                        \App\Models\DataRecord::where('upload_record_id', $record->id)->delete();
+                    ->before(function (RawUploadRecord $record) {
+                        // 删除该批次对应的所有粗数据记录
+                        \App\Models\RawDataRecord::where('upload_record_id', $record->id)->delete();
                         
-                        ActivityLog::log('delete', "删除上传记录：上传ID {$record->id}，同时删除了对应的数据记录");
+                        ActivityLog::log('delete', "删除粗数据上传记录：上传ID {$record->id}，同时删除了对应的粗数据记录");
                     }),
             ])
             ->bulkActions([
@@ -197,13 +195,13 @@ class UploadRecordResource extends Resource
                     Tables\Actions\DeleteBulkAction::make()
                         ->label('批量删除')
                         ->before(function ($records) {
-                            // 删除所有选中记录对应的数据记录
+                            // 删除所有选中记录对应的粗数据记录
                             foreach ($records as $record) {
-                                \App\Models\DataRecord::where('upload_record_id', $record->id)->delete();
+                                \App\Models\RawDataRecord::where('upload_record_id', $record->id)->delete();
                             }
                             
                             $ids = $records->pluck('id')->implode(', ');
-                            ActivityLog::log('delete', "批量删除上传记录：上传ID {$ids}，同时删除了对应的数据记录");
+                            ActivityLog::log('delete', "批量删除粗数据上传记录：上传ID {$ids}，同时删除了对应的粗数据记录");
                         }),
                 ]),
             ]);
@@ -219,9 +217,9 @@ class UploadRecordResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListUploadRecords::route('/'),
-            'create' => Pages\CreateUploadRecord::route('/create'),
-            'edit' => Pages\EditUploadRecord::route('/{record}/edit'),
+            'index' => Pages\ListRawUploadRecords::route('/'),
+            'create' => Pages\CreateRawUploadRecord::route('/create'),
+            'edit' => Pages\EditRawUploadRecord::route('/{record}/edit'),
         ];
     }
 }

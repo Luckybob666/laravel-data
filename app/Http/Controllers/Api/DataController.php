@@ -53,15 +53,16 @@ class DataController extends Controller
             ]);
 
             // 分发队列任务
-            ProcessFileUpload::dispatch($uploadRecord);
+            ProcessFileUpload::dispatch($uploadRecord, 'refined');
 
             // 记录活动日志
             ActivityLog::log(
                 'upload',
-                "API上传文件：{$originalFilename}",
+                "API上传精数据文件：{$originalFilename}",
                 [
                     'upload_record_id' => $uploadRecord->id,
                     'filename' => $originalFilename,
+                    'data_type' => 'refined',
                 ],
                 $uploadRecord
             );

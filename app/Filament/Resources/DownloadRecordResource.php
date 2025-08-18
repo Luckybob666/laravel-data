@@ -20,12 +20,10 @@ class DownloadRecordResource extends Resource
     protected static ?string $model = DownloadRecord::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-arrow-down-tray';
-
-    protected static ?string $navigationLabel = '下载记录';
-
-    protected static ?string $modelLabel = '下载记录';
-
-    protected static ?string $pluralModelLabel = '下载记录';
+    protected static ?string $navigationGroup = '数据仓库';
+    protected static ?string $navigationLabel = '下载列表';
+    protected static ?string $modelLabel = '下载列表';
+    protected static ?string $pluralModelLabel = '下载列表';
 
     protected static ?int $navigationSort = 3;
 
