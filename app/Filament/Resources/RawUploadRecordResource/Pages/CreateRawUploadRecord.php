@@ -71,4 +71,10 @@ class CreateRawUploadRecord extends CreateRecord
             );
         }
     }
+
+    protected function getRedirectUrl(): string
+    {
+        // 创建完成后跳转到列表页面
+        return static::getResource()::getUrl('index');
+    }
 }
