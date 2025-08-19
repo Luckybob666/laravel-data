@@ -17,16 +17,10 @@ class Dashboard extends BaseDashboard
         return '数据仪表盘';
     }
     
-    protected function getHeaderWidgets(): array
+    public function getWidgets(): array
     {
         return [
             DashboardStats::class,
-        ];
-    }
-    
-    protected function getFooterWidgets(): array
-    {
-        return [
             DataTrendsChart::class,
         ];
     }
