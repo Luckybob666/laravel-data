@@ -7,6 +7,7 @@ use App\Models\RawDataRecord;
 use App\Models\UploadRecord;
 use App\Models\RawUploadRecord;
 use App\Models\ActivityLog;
+use App\Helpers\LargeFileProcessor;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -16,7 +17,6 @@ use Maatwebsite\Excel\Facades\Excel;
 use Maatwebsite\Excel\Concerns\ToArray;
 use Maatwebsite\Excel\Concerns\WithChunkReading;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
-use Maatwebsite\Excel\Concerns\WithBatchInserts;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 
@@ -64,124 +64,20 @@ class ProcessFileUpload implements ShouldQueue
                 throw new \Exception("文件不存在：{$fullPath}");
             }
 
+            // 创建大文件处理器
+            $processor = new LargeFileProcessor($this->dataType, $uploadRecord->id);
+
+            // 创建导入处理器实例
+            $importHandler = new ExcelImportHandler($processor);
+
             // 使用流式读取器，增加批量大小
-            $reader = Excel::import(new class($this->dataType, $uploadRecord->id) implements ToArray, WithChunkReading, WithHeadingRow {
-                private $dataType;
-                private $uploadRecordId;
-                private $batchData = [];
-                private $successCount = 0;
-                private $duplicateCount = 0;
-                private $processedRows = 0;
-                private $batchSize = 2000; // 增加批量大小到2000
-
-                public function __construct($dataType, $uploadRecordId)
-                {
-                    $this->dataType = $dataType;
-                    $this->uploadRecordId = $uploadRecordId;
-                }
-
-                public function array(array $array)
-                {
-                    foreach ($array as $row) {
-                        $this->processRow($row);
-                    }
-                }
-
-                public function chunkSize(): int
-                {
-                    return 5000; // 增加分块大小到5000
-                }
-
-                private function processRow($row)
-                {
-                    // 获取手机号码（第一列）
-                    $phone = null;
-                    $otherData = [];
-                    
-                    // 处理不同的数据格式
-                    if (isset($row['phone'])) {
-                        $phone = trim($row['phone']);
-                        unset($row['phone']);
-                        $otherData = $row;
-                    } else {
-                        // 如果没有phone字段，取第一列作为手机号
-                        $values = array_values($row);
-                        if (!empty($values)) {
-                            $phone = trim($values[0]);
-                            $otherData = array_slice($values, 1);
-                        }
-                    }
-
-                    if (empty($phone)) {
-                        return;
-                    }
-
-                    // 检查手机号码是否已存在
-                    $existingRecord = $this->checkExistingRecord($phone);
-                    if ($existingRecord) {
-                        $this->duplicateCount++;
-                        return;
-                    }
-
-                    // 添加到批量数据
-                    $this->batchData[] = [
-                        'phone' => $phone,
-                        'data' => json_encode($otherData),
-                        'upload_record_id' => $this->uploadRecordId,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ];
-
-                    $this->successCount++;
-                    $this->processedRows++;
-
-                    // 当达到批量大小时，执行批量插入
-                    if (count($this->batchData) >= $this->batchSize) {
-                        $this->insertBatch();
-                    }
-                }
-
-                private function checkExistingRecord($phone)
-                {
-                    if ($this->dataType === 'raw') {
-                        return RawDataRecord::where('phone', $phone)->first();
-                    } else {
-                        return DataRecord::where('phone', $phone)->first();
-                    }
-                }
-
-                private function insertBatch()
-                {
-                    if (!empty($this->batchData)) {
-                        $tableName = $this->dataType === 'raw' ? 'raw_data_records' : 'data_records';
-                        DB::table($tableName)->insert($this->batchData);
-                        $this->batchData = [];
-                        
-                        // 记录进度
-                        \Log::info("批量插入完成", [
-                            'upload_record_id' => $this->uploadRecordId,
-                            'data_type' => $this->dataType,
-                            'processed_rows' => $this->processedRows,
-                            'memory_usage' => memory_get_usage(true) / 1024 / 1024 / 1024 . 'GB'
-                        ]);
-                    }
-                }
-
-                public function getStats()
-                {
-                    // 插入剩余的数据
-                    $this->insertBatch();
-                    
-                    return [
-                        'success_count' => $this->successCount,
-                        'duplicate_count' => $this->duplicateCount,
-                        'processed_rows' => $this->processedRows,
-                    ];
-                }
-            }, $fullPath);
+            Excel::import($importHandler, $fullPath);
 
             // 获取处理统计
-            $stats = $reader->getStats();
+            $stats = $processor->getStats();
+
+            // 清理内存
+            $processor->cleanup();
 
             // 更新上传记录
             $uploadRecord->update([
@@ -254,5 +150,30 @@ class ProcessFileUpload implements ShouldQueue
 
             throw $e;
         }
+    }
+}
+
+/**
+ * Excel 导入处理器类
+ */
+class ExcelImportHandler implements ToArray, WithChunkReading, WithHeadingRow
+{
+    private $processor;
+
+    public function __construct(LargeFileProcessor $processor)
+    {
+        $this->processor = $processor;
+    }
+
+    public function array(array $array)
+    {
+        foreach ($array as $row) {
+            $this->processor->processRow($row);
+        }
+    }
+
+    public function chunkSize(): int
+    {
+        return 3000; // 减少分块大小以降低内存使用
     }
 }
