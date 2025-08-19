@@ -16,39 +16,8 @@ class LogUserActivity
      */
     public function handle(Request $request, Closure $next): Response
     {
+        // 移除登录登出记录，只使用事件监听器
         $response = $next($request);
-
-        // 只记录已认证用户的活动
-        if (auth()->check()) {
-            $user = auth()->user();
-            $path = $request->path();
-            $method = $request->method();
-
-            // 记录登录活动
-            if ($path === 'admin/login' && $method === 'POST') {
-                ActivityLog::log(
-                    'login',
-                    "用户 {$user->name} 登录系统",
-                    [
-                        'user_id' => $user->id,
-                        'email' => $user->email,
-                    ]
-                );
-            }
-
-            // 记录登出活动
-            if ($path === 'admin/logout' && $method === 'POST') {
-                ActivityLog::log(
-                    'logout',
-                    "用户 {$user->name} 登出系统",
-                    [
-                        'user_id' => $user->id,
-                        'email' => $user->email,
-                    ]
-                );
-            }
-        }
-
         return $response;
     }
 }

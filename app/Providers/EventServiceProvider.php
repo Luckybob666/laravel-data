@@ -4,7 +4,11 @@ namespace App\Providers;
 
 use App\Events\FileDownloadCompleted;
 use App\Listeners\SendFileDownloadNotification;
+use App\Listeners\LogUserLogin;
+use App\Listeners\LogUserLogout;
 use Illuminate\Auth\Events\Registered;
+use Illuminate\Auth\Events\Login;
+use Illuminate\Auth\Events\Logout;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Event;
@@ -22,6 +26,12 @@ class EventServiceProvider extends ServiceProvider
         ],
         FileDownloadCompleted::class => [
             SendFileDownloadNotification::class,
+        ],
+        Login::class => [
+            LogUserLogin::class,
+        ],
+        Logout::class => [
+            LogUserLogout::class,
         ],
     ];
 
