@@ -44,8 +44,8 @@ class LargeFileProcessor
             $this->checkExistingPhonesBatch();
         }
 
-        // 检查手机号码是否已存在
-        if (in_array($phone, $this->existingPhones)) {
+        // 检查手机号码是否已存在（包括当前批次中的重复）
+        if (in_array($phone, $this->existingPhones) || $this->isDuplicateInCurrentBatch($phone)) {
             $this->duplicateCount++;
             return;
         }
@@ -139,15 +139,22 @@ class LargeFileProcessor
             $tableName = $this->dataType === 'raw' ? 'raw_data_records' : 'data_records';
             
             try {
-                DB::table($tableName)->insert($this->batchData);
+                // 使用insertOrIgnore避免重复键错误
+                $insertedCount = DB::table($tableName)->insertOrIgnore($this->batchData);
                 
                 Log::info("批量插入完成", [
                     'upload_record_id' => $this->uploadRecordId,
                     'data_type' => $this->dataType,
                     'processed_rows' => $this->processedRows,
                     'batch_size' => count($this->batchData),
+                    'inserted_count' => $insertedCount,
+                    'ignored_count' => count($this->batchData) - $insertedCount,
                     'memory_usage' => $this->formatMemoryUsage()
                 ]);
+                
+                // 更新成功计数
+                $this->successCount = $this->successCount - (count($this->batchData) - $insertedCount);
+                $this->duplicateCount += (count($this->batchData) - $insertedCount);
                 
                 $this->batchData = [];
             } catch (\Exception $e) {
@@ -155,11 +162,51 @@ class LargeFileProcessor
                     'upload_record_id' => $this->uploadRecordId,
                     'data_type' => $this->dataType,
                     'error' => $e->getMessage(),
-                    'batch_size' => count($this->batchData)
+                    'batch_size' => count($this->batchData),
+                    'first_phone' => $this->batchData[0]['phone'] ?? 'N/A',
+                    'last_phone' => end($this->batchData)['phone'] ?? 'N/A'
                 ]);
-                throw $e;
+                
+                // 如果批量插入失败，尝试逐条插入
+                $this->insertOneByOne();
             }
         }
+    }
+
+    /**
+     * 逐条插入数据（作为批量插入失败的后备方案）
+     */
+    private function insertOneByOne()
+    {
+        $tableName = $this->dataType === 'raw' ? 'raw_data_records' : 'data_records';
+        $successCount = 0;
+        $duplicateCount = 0;
+        
+        foreach ($this->batchData as $data) {
+            try {
+                DB::table($tableName)->insertOrIgnore([$data]);
+                $successCount++;
+            } catch (\Exception $e) {
+                Log::warning("单条插入失败", [
+                    'phone' => $data['phone'],
+                    'error' => $e->getMessage()
+                ]);
+                $duplicateCount++;
+            }
+        }
+        
+        Log::info("逐条插入完成", [
+            'upload_record_id' => $this->uploadRecordId,
+            'data_type' => $this->dataType,
+            'success_count' => $successCount,
+            'duplicate_count' => $duplicateCount
+        ]);
+        
+        // 更新计数
+        $this->successCount = $this->successCount - (count($this->batchData) - $successCount);
+        $this->duplicateCount += $duplicateCount;
+        
+        $this->batchData = [];
     }
 
     /**
@@ -206,5 +253,19 @@ class LargeFileProcessor
         if (function_exists('gc_collect_cycles')) {
             gc_collect_cycles();
         }
+    }
+
+    /**
+     * 检查当前批次中是否有重复的手机号
+     */
+    private function isDuplicateInCurrentBatch($phone)
+    {
+        // 检查当前批次数据中是否已有相同手机号
+        foreach ($this->batchData as $data) {
+            if ($data['phone'] === $phone) {
+                return true;
+            }
+        }
+        return false;
     }
 }
