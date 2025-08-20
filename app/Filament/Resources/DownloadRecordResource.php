@@ -4,6 +4,8 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\DownloadRecordResource\Pages;
 use App\Models\DownloadRecord;
+use App\Models\UploadRecord;
+use App\Models\RawUploadRecord;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -60,7 +62,32 @@ class DownloadRecordResource extends Resource
                 TextColumn::make('upload_record_id')
                     ->label('来源上传ID')
                     ->sortable()
-                    ->formatStateUsing(fn ($state) => $state ? "上传ID: {$state}" : '全部数据'),
+                    ->formatStateUsing(function ($state, DownloadRecord $record) {
+                        if (!$state) {
+                            return '全部数据';
+                        }
+                        
+                        // 根据文件名判断数据类型
+                        $isRawData = str_contains($record->filename, 'raw_data');
+                        $dataTypeText = $isRawData ? '粗数据ID' : '精数据ID';
+                        
+                        return "{$dataTypeText}: {$state}";
+                    }),
+                TextColumn::make('source_upload_record.country')
+                    ->label('国家')
+                    ->sortable()
+                    ->searchable(),
+                TextColumn::make('source_upload_record.industry')
+                    ->label('行业')
+                    ->sortable()
+                    ->searchable(),
+                TextColumn::make('source_upload_record.domain')
+                    ->label('域名')
+                    ->sortable()
+                    ->searchable(),
+                TextColumn::make('source_upload_record.remarks')
+                    ->label('备注')
+                    ->limit(30),
                 TextColumn::make('record_count')
                     ->label('记录数量')
                     ->sortable(),
@@ -99,6 +126,66 @@ class DownloadRecordResource extends Resource
                 Tables\Filters\SelectFilter::make('user_id')
                     ->label('用户')
                     ->relationship('user', 'name'),
+                Tables\Filters\SelectFilter::make('source_upload_record.country')
+                    ->label('国家')
+                    ->options(function () {
+                        // 获取所有国家选项（包括精数据和粗数据）
+                        $countries = collect();
+                        
+                        // 精数据国家
+                        $countries = $countries->merge(
+                            UploadRecord::distinct()->pluck('country')->filter()->values()
+                        );
+                        
+                        // 粗数据国家
+                        $countries = $countries->merge(
+                            RawUploadRecord::distinct()->pluck('country')->filter()->values()
+                        );
+                        
+                        return $countries->unique()->sort()->values()->mapWithKeys(function ($country) {
+                            return [$country => $country];
+                        })->toArray();
+                    }),
+                Tables\Filters\SelectFilter::make('source_upload_record.industry')
+                    ->label('行业')
+                    ->options(function () {
+                        // 获取所有行业选项（包括精数据和粗数据）
+                        $industries = collect();
+                        
+                        // 精数据行业
+                        $industries = $industries->merge(
+                            UploadRecord::distinct()->pluck('industry')->filter()->values()
+                        );
+                        
+                        // 粗数据行业
+                        $industries = $industries->merge(
+                            RawUploadRecord::distinct()->pluck('industry')->filter()->values()
+                        );
+                        
+                        return $industries->unique()->sort()->values()->mapWithKeys(function ($industry) {
+                            return [$industry => $industry];
+                        })->toArray();
+                    }),
+                Tables\Filters\SelectFilter::make('source_upload_record.domain')
+                    ->label('域名')
+                    ->options(function () {
+                        // 获取所有域名选项（包括精数据和粗数据）
+                        $domains = collect();
+                        
+                        // 精数据域名
+                        $domains = $domains->merge(
+                            UploadRecord::distinct()->pluck('domain')->filter()->values()
+                        );
+                        
+                        // 粗数据域名
+                        $domains = $domains->merge(
+                            RawUploadRecord::distinct()->pluck('domain')->filter()->values()
+                        );
+                        
+                        return $domains->unique()->sort()->values()->mapWithKeys(function ($domain) {
+                            return [$domain => $domain];
+                        })->toArray();
+                    }),
             ])
             ->actions([
                 Action::make('download')

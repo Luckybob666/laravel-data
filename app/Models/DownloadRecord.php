@@ -78,10 +78,37 @@ class DownloadRecord extends Model
     }
 
     /**
-     * 上传记录关系
+     * 上传记录关系（精数据）
      */
     public function uploadRecord()
     {
         return $this->belongsTo(UploadRecord::class);
+    }
+
+    /**
+     * 粗数据上传记录关系
+     */
+    public function rawUploadRecord()
+    {
+        return $this->belongsTo(RawUploadRecord::class, 'upload_record_id');
+    }
+
+    /**
+     * 获取数据类型
+     */
+    public function getDataTypeAttribute(): string
+    {
+        return str_contains($this->filename, 'raw_data') ? 'raw' : 'refined';
+    }
+
+    /**
+     * 获取对应的上传记录（根据数据类型）
+     */
+    public function getSourceUploadRecordAttribute()
+    {
+        if ($this->data_type === 'raw') {
+            return $this->rawUploadRecord;
+        }
+        return $this->uploadRecord;
     }
 }
