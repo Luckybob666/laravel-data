@@ -81,7 +81,7 @@ class ProcessFileUpload implements ShouldQueue
 
             // 更新上传记录
             $uploadRecord->update([
-                'total_count' => $stats['processed_rows'] + $stats['duplicate_count'],
+                'total_count' => $stats['total_rows'], // 使用总行数
                 'success_count' => $stats['success_count'],
                 'duplicate_count' => $stats['duplicate_count'],
                 'status' => $statusClass::STATUS_COMPLETED,
@@ -96,11 +96,11 @@ class ProcessFileUpload implements ShouldQueue
             $dataTypeText = $this->dataType === 'raw' ? '粗数据' : '精数据';
             ActivityLog::log(
                 'upload',
-                "大文件上传处理完成（{$dataTypeText}），上传ID：{$uploadRecord->id}，总条数：{$stats['processed_rows']}，成功：{$stats['success_count']}，重复：{$stats['duplicate_count']}",
+                "大文件上传处理完成（{$dataTypeText}），上传ID：{$uploadRecord->id}，总条数：{$stats['total_rows']}，成功：{$stats['success_count']}，重复：{$stats['duplicate_count']}",
                 [
                     'upload_record_id' => $uploadRecord->id,
                     'data_type' => $this->dataType,
-                    'total_count' => $stats['processed_rows'] + $stats['duplicate_count'],
+                    'total_count' => $stats['total_rows'],
                     'success_count' => $stats['success_count'],
                     'duplicate_count' => $stats['duplicate_count'],
                     'processing_time' => microtime(true) - LARAVEL_START,
@@ -111,7 +111,7 @@ class ProcessFileUpload implements ShouldQueue
             \Log::info("大文件处理完成", [
                 'upload_record_id' => $uploadRecord->id,
                 'data_type' => $this->dataType,
-                'total_count' => $stats['processed_rows'] + $stats['duplicate_count'],
+                'total_count' => $stats['total_rows'],
                 'success_count' => $stats['success_count'],
                 'duplicate_count' => $stats['duplicate_count'],
                 'final_memory_usage' => memory_get_usage(true) / 1024 / 1024 / 1024 . 'GB'

@@ -18,6 +18,7 @@ class LargeFileProcessor
     private $successCount = 0;
     private $duplicateCount = 0;
     private $processedRows = 0;
+    private $totalRows = 0; // 新增：总行数计数器
 
     public function __construct($dataType, $uploadRecordId)
     {
@@ -30,6 +31,9 @@ class LargeFileProcessor
      */
     public function processRow($row)
     {
+        // 增加总行数计数
+        $this->totalRows++;
+
         // 获取手机号码
         $phone = $this->extractPhone($row);
         if (empty($phone)) {
@@ -221,9 +225,10 @@ class LargeFileProcessor
         $this->insertBatch();
         
         return [
+            'total_rows' => $this->totalRows, // 总行数（包括空行）
             'success_count' => $this->successCount,
             'duplicate_count' => $this->duplicateCount,
-            'processed_rows' => $this->processedRows,
+            'processed_rows' => $this->processedRows, // 有效处理的行数（有手机号的）
         ];
     }
 
