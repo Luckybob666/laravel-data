@@ -192,6 +192,25 @@ class RawUploadRecordResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    // 添加统计操作
+                    Tables\Actions\BulkAction::make('show_statistics')
+                        ->label('显示统计')
+                        ->icon('heroicon-o-chart-bar')
+                        ->color('info')
+                        ->action(function ($records) {
+                            $totalCount = $records->sum('total_count');
+                            $successCount = $records->sum('success_count');
+                            $duplicateCount = $records->sum('duplicate_count');
+                            
+                            \Filament\Notifications\Notification::make()
+                                ->title('选中记录统计')
+                                ->body("总上传数量：{$totalCount}\n成功数量：{$successCount}\n重复数量：{$duplicateCount}")
+                                ->info()
+                                ->persistent()
+                                ->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
+                    
                     Tables\Actions\DeleteBulkAction::make()
                         ->label('批量删除')
                         ->before(function ($records) {
