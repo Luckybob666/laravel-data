@@ -146,15 +146,15 @@ class LargeFileProcessor
                 // 使用insertOrIgnore避免重复键错误
                 $insertedCount = DB::table($tableName)->insertOrIgnore($this->batchData);
                 
-                Log::info("批量插入完成", [
-                    'upload_record_id' => $this->uploadRecordId,
-                    'data_type' => $this->dataType,
-                    'processed_rows' => $this->processedRows,
-                    'batch_size' => count($this->batchData),
-                    'inserted_count' => $insertedCount,
-                    'ignored_count' => count($this->batchData) - $insertedCount,
-                    'memory_usage' => $this->formatMemoryUsage()
-                ]);
+                // Log::info("批量插入完成", [
+                //     'upload_record_id' => $this->uploadRecordId,
+                //     'data_type' => $this->dataType,
+                //     'processed_rows' => $this->processedRows,
+                //     'batch_size' => count($this->batchData),
+                //     'inserted_count' => $insertedCount,
+                //     'ignored_count' => count($this->batchData) - $insertedCount,
+                //     'memory_usage' => $this->formatMemoryUsage()
+                // ]);
                 
                 // 更新成功计数
                 $this->successCount = $this->successCount - (count($this->batchData) - $insertedCount);
@@ -162,14 +162,14 @@ class LargeFileProcessor
                 
                 $this->batchData = [];
             } catch (\Exception $e) {
-                Log::error("批量插入失败", [
-                    'upload_record_id' => $this->uploadRecordId,
-                    'data_type' => $this->dataType,
-                    'error' => $e->getMessage(),
-                    'batch_size' => count($this->batchData),
-                    'first_phone' => $this->batchData[0]['phone'] ?? 'N/A',
-                    'last_phone' => end($this->batchData)['phone'] ?? 'N/A'
-                ]);
+                // Log::error("批量插入失败", [
+                //     'upload_record_id' => $this->uploadRecordId,
+                //     'data_type' => $this->dataType,
+                //     'error' => $e->getMessage(),
+                //     'batch_size' => count($this->batchData),
+                //     'first_phone' => $this->batchData[0]['phone'] ?? 'N/A',
+                //     'last_phone' => end($this->batchData)['phone'] ?? 'N/A'
+                // ]);
                 
                 // 如果批量插入失败，尝试逐条插入
                 $this->insertOneByOne();
@@ -199,12 +199,12 @@ class LargeFileProcessor
             }
         }
         
-        Log::info("逐条插入完成", [
-            'upload_record_id' => $this->uploadRecordId,
-            'data_type' => $this->dataType,
-            'success_count' => $successCount,
-            'duplicate_count' => $duplicateCount
-        ]);
+        // Log::info("逐条插入完成", [
+        //     'upload_record_id' => $this->uploadRecordId,
+        //     'data_type' => $this->dataType,
+        //     'success_count' => $successCount,
+        //     'duplicate_count' => $duplicateCount
+        // ]);
         
         // 更新计数
         $this->successCount = $this->successCount - (count($this->batchData) - $successCount);
