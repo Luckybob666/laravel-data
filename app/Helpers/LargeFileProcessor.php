@@ -100,14 +100,28 @@ class LargeFileProcessor
             $values = array_values($row);
             $otherData = array_slice($values, 1);
             
-            // 如果没有标题行，使用column1、column2等作为键
-            $result = [];
-            foreach ($otherData as $index => $value) {
-                $key = 'column' . ($index + 1);
-                $result[$key] = $value;
+            // 检查是否有字符串键（表示有标题行）
+            $hasStringKeys = false;
+            foreach ($row as $key => $value) {
+                if (is_string($key) && !is_numeric($key)) {
+                    $hasStringKeys = true;
+                    break;
+                }
             }
             
-            return $result;
+            if ($hasStringKeys) {
+                // 有标题行，保持原有的键值对格式
+                unset($row[0]); // 移除第一列（手机号）
+                return $row;
+            } else {
+                // 没有标题行，使用column1、column2等作为键
+                $result = [];
+                foreach ($otherData as $index => $value) {
+                    $key = 'column' . ($index + 1);
+                    $result[$key] = $value;
+                }
+                return $result;
+            }
         }
     }
 
