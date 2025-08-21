@@ -4,6 +4,7 @@ namespace App\Helpers;
 
 use App\Models\DataRecord;
 use App\Models\RawDataRecord;
+use App\Models\UsedDataRecord;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -127,11 +128,11 @@ class LargeFileProcessor
      */
     private function getExistingPhonesBatch($phones)
     {
-        if ($this->dataType === 'raw') {
-            return RawDataRecord::whereIn('phone', $phones)->pluck('phone')->toArray();
-        } else {
-            return DataRecord::whereIn('phone', $phones)->pluck('phone')->toArray();
-        }
+        return match($this->dataType) {
+            'raw' => RawDataRecord::whereIn('phone', $phones)->pluck('phone')->toArray(),
+            'used' => UsedDataRecord::whereIn('phone', $phones)->pluck('phone')->toArray(),
+            default => DataRecord::whereIn('phone', $phones)->pluck('phone')->toArray(),
+        };
     }
 
     /**
@@ -140,7 +141,11 @@ class LargeFileProcessor
     private function insertBatch()
     {
         if (!empty($this->batchData)) {
-            $tableName = $this->dataType === 'raw' ? 'raw_data_records' : 'data_records';
+            $tableName = match($this->dataType) {
+                'raw' => 'raw_data_records',
+                'used' => 'used_data_records',
+                default => 'data_records',
+            };
             
             try {
                 // 使用insertOrIgnore避免重复键错误
@@ -182,7 +187,11 @@ class LargeFileProcessor
      */
     private function insertOneByOne()
     {
-        $tableName = $this->dataType === 'raw' ? 'raw_data_records' : 'data_records';
+        $tableName = match($this->dataType) {
+            'raw' => 'raw_data_records',
+            'used' => 'used_data_records',
+            default => 'data_records',
+        };
         $successCount = 0;
         $duplicateCount = 0;
         

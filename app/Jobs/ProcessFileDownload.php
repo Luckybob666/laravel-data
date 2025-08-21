@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\DataRecord;
 use App\Models\RawDataRecord;
+use App\Models\UsedDataRecord;
 use App\Models\ActivityLog;
 use App\Models\User;
 use App\Models\DownloadRecord;
@@ -59,7 +60,11 @@ class ProcessFileDownload implements ShouldQueue
                 $records = $this->records;
             } else {
                 // 根据数据类型选择模型
-                $model = $this->dataType === 'raw' ? RawDataRecord::class : DataRecord::class;
+                $model = match($this->dataType) {
+                    'raw' => RawDataRecord::class,
+                    'used' => UsedDataRecord::class,
+                    default => DataRecord::class,
+                };
                 $query = $model::query();
 
                 // 如果指定了上传记录ID，则只导出该记录的数据
@@ -148,7 +153,11 @@ class ProcessFileDownload implements ShouldQueue
             };
 
             // 生成文件名
-            $dataTypePrefix = $this->dataType === 'raw' ? 'raw_data' : 'data';
+            $dataTypePrefix = match($this->dataType) {
+                'raw' => 'raw_data',
+                'used' => 'used_data',
+                default => 'data',
+            };
             $filename = $dataTypePrefix . '_export_' . now()->format('Y-m-d_H-i-s') . '.' . $this->format;
             $filePath = 'exports/' . $filename;
 
@@ -160,7 +169,11 @@ class ProcessFileDownload implements ShouldQueue
             }
 
             // 记录活动日志
-            $dataTypeText = $this->dataType === 'raw' ? '粗数据' : '精数据';
+            $dataTypeText = match($this->dataType) {
+                'raw' => '粗数据',
+                'used' => '已用数据',
+                default => '精数据',
+            };
             ActivityLog::log(
                 'download',
                 "导出{$dataTypeText}文件 {$filename}，共 {$records->count()} 条记录",
@@ -199,7 +212,11 @@ class ProcessFileDownload implements ShouldQueue
 
         } catch (\Exception $e) {
             // 记录错误日志
-            $dataTypeText = $this->dataType === 'raw' ? '粗数据' : '精数据';
+            $dataTypeText = match($this->dataType) {
+                'raw' => '粗数据',
+                'used' => '已用数据',
+                default => '精数据',
+            };
             ActivityLog::log(
                 'download',
                 "导出{$dataTypeText}失败：" . $e->getMessage(),

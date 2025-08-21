@@ -4,8 +4,10 @@ namespace App\Jobs;
 
 use App\Models\DataRecord;
 use App\Models\RawDataRecord;
+use App\Models\UsedDataRecord;
 use App\Models\UploadRecord;
 use App\Models\RawUploadRecord;
+use App\Models\UsedUploadRecord;
 use App\Models\ActivityLog;
 use App\Helpers\LargeFileProcessor;
 use Illuminate\Bus\Queueable;
@@ -50,11 +52,19 @@ class ProcessFileUpload implements ShouldQueue
             ini_set('max_execution_time', 7200); // 2小时超时
             
             // 根据数据类型选择模型
-            $model = $this->dataType === 'raw' ? RawUploadRecord::class : UploadRecord::class;
+            $model = match($this->dataType) {
+                'raw' => RawUploadRecord::class,
+                'used' => UsedUploadRecord::class,
+                default => UploadRecord::class,
+            };
             $uploadRecord = $model::findOrFail($this->uploadRecordId);
             
             // 更新状态为处理中
-            $statusClass = $this->dataType === 'raw' ? RawUploadRecord::class : UploadRecord::class;
+            $statusClass = match($this->dataType) {
+                'raw' => RawUploadRecord::class,
+                'used' => UsedUploadRecord::class,
+                default => UploadRecord::class,
+            };
             $uploadRecord->update(['status' => $statusClass::STATUS_PROCESSING]);
 
             $filePath = $uploadRecord->file_path;
@@ -93,7 +103,11 @@ class ProcessFileUpload implements ShouldQueue
             }
 
             // 记录活动日志
-            $dataTypeText = $this->dataType === 'raw' ? '粗数据' : '精数据';
+            $dataTypeText = match($this->dataType) {
+                'raw' => '粗数据',
+                'used' => '已用数据',
+                default => '精数据',
+            };
             ActivityLog::log(
                 'upload',
                 "大文件上传处理完成（{$dataTypeText}），上传ID：{$uploadRecord->id}，总条数：{$stats['total_rows']}，成功：{$stats['success_count']}，重复：{$stats['duplicate_count']}",
@@ -120,18 +134,30 @@ class ProcessFileUpload implements ShouldQueue
         } catch (\Exception $e) {
             // 获取上传记录（如果可能的话）
             try {
-                $model = $this->dataType === 'raw' ? RawUploadRecord::class : UploadRecord::class;
+                $model = match($this->dataType) {
+                    'raw' => RawUploadRecord::class,
+                    'used' => UsedUploadRecord::class,
+                    default => UploadRecord::class,
+                };
                 $uploadRecord = $model::find($this->uploadRecordId);
                 if ($uploadRecord) {
                     // 更新状态为失败
-                    $statusClass = $this->dataType === 'raw' ? RawUploadRecord::class : UploadRecord::class;
+                    $statusClass = match($this->dataType) {
+                        'raw' => RawUploadRecord::class,
+                        'used' => UsedUploadRecord::class,
+                        default => UploadRecord::class,
+                    };
                     $uploadRecord->update([
                         'status' => $statusClass::STATUS_FAILED,
                         'error_message' => $e->getMessage(),
                     ]);
 
                     // 记录错误日志
-                    $dataTypeText = $this->dataType === 'raw' ? '粗数据' : '精数据';
+                    $dataTypeText = match($this->dataType) {
+                        'raw' => '粗数据',
+                        'used' => '已用数据',
+                        default => '精数据',
+                    };
                     ActivityLog::log(
                         'upload',
                         "大文件上传处理失败（{$dataTypeText}），上传ID：{$uploadRecord->id}，错误：" . $e->getMessage(),
