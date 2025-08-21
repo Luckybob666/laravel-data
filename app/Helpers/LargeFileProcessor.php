@@ -98,7 +98,16 @@ class LargeFileProcessor
         } else {
             // 如果没有phone字段，取除第一列外的其他数据
             $values = array_values($row);
-            return array_slice($values, 1);
+            $otherData = array_slice($values, 1);
+            
+            // 如果没有标题行，使用column1、column2等作为键
+            $result = [];
+            foreach ($otherData as $index => $value) {
+                $key = 'column' . ($index + 1);
+                $result[$key] = $value;
+            }
+            
+            return $result;
         }
     }
 
