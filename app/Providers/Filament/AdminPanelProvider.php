@@ -54,9 +54,9 @@ class AdminPanelProvider extends PanelProvider
                 DispatchServingFilamentEvent::class,
                 \App\Http\Middleware\LogUserActivity::class,
             ])
-            // ->authMiddleware([
-            //     Authenticate::class,
-            // ])
+            ->authMiddleware([
+                Authenticate::class,
+            ])
             ->databaseNotifications();
     }
 }
