@@ -94,11 +94,24 @@ class DownloadRecord extends Model
     }
 
     /**
+     * 已使用数据上传记录关系
+     */
+    public function usedUploadRecord()
+    {
+        return $this->belongsTo(UsedUploadRecord::class, 'upload_record_id');
+    }
+
+    /**
      * 获取数据类型
      */
     public function getDataTypeAttribute(): string
     {
-        return str_contains($this->filename, 'raw_data') ? 'raw' : 'refined';
+        if (str_contains($this->filename, 'raw_data')) {
+            return 'raw';
+        } elseif (str_contains($this->filename, 'used_data')) {
+            return 'used';
+        }
+        return 'refined';
     }
 
     /**
@@ -106,9 +119,10 @@ class DownloadRecord extends Model
      */
     public function getSourceUploadRecordAttribute()
     {
-        if ($this->data_type === 'raw') {
-            return $this->rawUploadRecord;
-        }
-        return $this->uploadRecord;
+        return match($this->data_type) {
+            'raw' => $this->rawUploadRecord,
+            'used' => $this->usedUploadRecord,
+            default => $this->uploadRecord,
+        };
     }
 }

@@ -71,22 +71,39 @@ class ProcessFileDownload implements ShouldQueue
                 if (!empty($this->filters['upload_record_id'])) {
                     $query->where('upload_record_id', $this->filters['upload_record_id']);
                 } else {
-                    // 应用其他过滤器
-                    if (!empty($this->filters['phone'])) {
-                        $query->where('phone', 'like', '%' . $this->filters['phone'] . '%');
-                    }
+                                    // 应用其他过滤器
+                if (!empty($this->filters['phone'])) {
+                    $query->where('phone', 'like', '%' . $this->filters['phone'] . '%');
+                }
 
-                    if (!empty($this->filters['country'])) {
+                // 根据数据类型使用正确的关系进行过滤
+                if (!empty($this->filters['country'])) {
+                    if ($this->dataType === 'used') {
+                        // 已使用数据使用 UsedUploadRecord 关系
+                        $query->whereHas('uploadRecord', function ($q) {
+                            $q->where('country', 'like', '%' . $this->filters['country'] . '%');
+                        });
+                    } else {
+                        // 精数据和粗数据使用 UploadRecord 或 RawUploadRecord 关系
                         $query->whereHas('uploadRecord', function ($q) {
                             $q->where('country', 'like', '%' . $this->filters['country'] . '%');
                         });
                     }
+                }
 
-                    if (!empty($this->filters['industry'])) {
+                if (!empty($this->filters['industry'])) {
+                    if ($this->dataType === 'used') {
+                        // 已使用数据使用 UsedUploadRecord 关系
+                        $query->whereHas('uploadRecord', function ($q) {
+                            $q->where('industry', 'like', '%' . $this->filters['industry'] . '%');
+                        });
+                    } else {
+                        // 精数据和粗数据使用 UploadRecord 或 RawUploadRecord 关系
                         $query->whereHas('uploadRecord', function ($q) {
                             $q->where('industry', 'like', '%' . $this->filters['industry'] . '%');
                         });
                     }
+                }
 
                     if (!empty($this->filters['date_from'])) {
                         $query->whereDate('created_at', '>=', $this->filters['date_from']);

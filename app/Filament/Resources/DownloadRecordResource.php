@@ -6,6 +6,7 @@ use App\Filament\Resources\DownloadRecordResource\Pages;
 use App\Models\DownloadRecord;
 use App\Models\UploadRecord;
 use App\Models\RawUploadRecord;
+use App\Models\UsedUploadRecord;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -68,8 +69,13 @@ class DownloadRecordResource extends Resource
                         }
                         
                         // 根据文件名判断数据类型
-                        $isRawData = str_contains($record->filename, 'raw_data');
-                        $dataTypeText = $isRawData ? '粗数据ID' : '精数据ID';
+                        if (str_contains($record->filename, 'raw_data')) {
+                            $dataTypeText = '粗数据ID';
+                        } elseif (str_contains($record->filename, 'used_data')) {
+                            $dataTypeText = '已用数据ID';
+                        } else {
+                            $dataTypeText = '精数据ID';
+                        }
                         
                         return "{$dataTypeText}: {$state}";
                     }),
@@ -129,7 +135,7 @@ class DownloadRecordResource extends Resource
                 Tables\Filters\SelectFilter::make('source_upload_record.country')
                     ->label('国家')
                     ->options(function () {
-                        // 获取所有国家选项（包括精数据和粗数据）
+                        // 获取所有国家选项（包括精数据、粗数据和已使用数据）
                         $countries = collect();
                         
                         // 精数据国家
@@ -142,6 +148,11 @@ class DownloadRecordResource extends Resource
                             RawUploadRecord::distinct()->pluck('country')->filter()->values()
                         );
                         
+                        // 已使用数据国家
+                        $countries = $countries->merge(
+                            UsedUploadRecord::distinct()->pluck('country')->filter()->values()
+                        );
+                        
                         return $countries->unique()->sort()->values()->mapWithKeys(function ($country) {
                             return [$country => $country];
                         })->toArray();
@@ -149,7 +160,7 @@ class DownloadRecordResource extends Resource
                 Tables\Filters\SelectFilter::make('source_upload_record.industry')
                     ->label('行业')
                     ->options(function () {
-                        // 获取所有行业选项（包括精数据和粗数据）
+                        // 获取所有行业选项（包括精数据、粗数据和已使用数据）
                         $industries = collect();
                         
                         // 精数据行业
@@ -162,6 +173,11 @@ class DownloadRecordResource extends Resource
                             RawUploadRecord::distinct()->pluck('industry')->filter()->values()
                         );
                         
+                        // 已使用数据行业
+                        $industries = $industries->merge(
+                            UsedUploadRecord::distinct()->pluck('industry')->filter()->values()
+                        );
+                        
                         return $industries->unique()->sort()->values()->mapWithKeys(function ($industry) {
                             return [$industry => $industry];
                         })->toArray();
@@ -169,7 +185,7 @@ class DownloadRecordResource extends Resource
                 Tables\Filters\SelectFilter::make('source_upload_record.domain')
                     ->label('域名')
                     ->options(function () {
-                        // 获取所有域名选项（包括精数据和粗数据）
+                        // 获取所有域名选项（包括精数据、粗数据和已使用数据）
                         $domains = collect();
                         
                         // 精数据域名
@@ -180,6 +196,11 @@ class DownloadRecordResource extends Resource
                         // 粗数据域名
                         $domains = $domains->merge(
                             RawUploadRecord::distinct()->pluck('domain')->filter()->values()
+                        );
+                        
+                        // 已使用数据域名
+                        $domains = $domains->merge(
+                            UsedUploadRecord::distinct()->pluck('domain')->filter()->values()
                         );
                         
                         return $domains->unique()->sort()->values()->mapWithKeys(function ($domain) {
