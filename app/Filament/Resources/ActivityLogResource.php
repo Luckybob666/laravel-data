@@ -78,6 +78,8 @@ class ActivityLogResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->recordUrl(null)
+            ->defaultSort('id', 'desc')
             ->columns([
                 TextColumn::make('action')
                     ->label('操作类型')

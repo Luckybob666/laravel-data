@@ -78,6 +78,7 @@ class UploadRecordResource extends Resource
     {
         return $table
             ->recordUrl(null)
+            ->defaultSort('id', 'desc')
             ->columns([
                 TextColumn::make('id')
                     ->label('上传ID')

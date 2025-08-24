@@ -55,6 +55,8 @@ class DownloadRecordResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->recordUrl(null)
+            ->defaultSort('id', 'desc')
             ->columns([
                 TextColumn::make('filename')
                     ->label('文件名')
