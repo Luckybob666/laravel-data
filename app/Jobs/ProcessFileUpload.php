@@ -187,6 +187,7 @@ class ExcelImportHandler implements ToArray, WithChunkReading
     private $processor;
     private $hasHeaders = false;
     private $headers = [];
+    private $isFirstChunk = true;
 
     public function __construct(LargeFileProcessor $processor)
     {
@@ -199,16 +200,22 @@ class ExcelImportHandler implements ToArray, WithChunkReading
             return;
         }
 
-        // 检查第一行是否包含标题（通过检查是否包含非数字键或空值）
-        $firstRow = $array[0];
-        $this->hasHeaders = $this->detectHeaders($firstRow);
-        
-        if ($this->hasHeaders) {
-            // 如果有标题行，保存标题并跳过第一行
-            $this->headers = array_values($firstRow);
-            $dataRows = array_slice($array, 1);
+        // 只在第一个分块时检测标题行
+        if ($this->isFirstChunk) {
+            $firstRow = $array[0];
+            $this->hasHeaders = $this->detectHeaders($firstRow);
+            
+            if ($this->hasHeaders) {
+                // 如果有标题行，保存标题并跳过第一行
+                $this->headers = array_values($firstRow);
+                $dataRows = array_slice($array, 1);
+            } else {
+                // 如果没有标题行，所有行都是数据
+                $dataRows = $array;
+            }
+            $this->isFirstChunk = false;
         } else {
-            // 如果没有标题行，所有行都是数据
+            // 后续分块直接处理所有行
             $dataRows = $array;
         }
 
@@ -237,16 +244,23 @@ class ExcelImportHandler implements ToArray, WithChunkReading
     {
         // 检查是否大部分值都是字符串且不是纯数字
         $stringCount = 0;
+        $numericCount = 0;
+        $emptyCount = 0;
         $totalCount = count($firstRow);
         
         foreach ($firstRow as $value) {
-            if (is_string($value) && !is_numeric($value) && !empty(trim($value))) {
+            $trimmedValue = trim($value);
+            if (empty($trimmedValue)) {
+                $emptyCount++;
+            } elseif (is_string($value) && !is_numeric($trimmedValue)) {
                 $stringCount++;
+            } elseif (is_numeric($trimmedValue)) {
+                $numericCount++;
             }
         }
         
-        // 如果超过50%的值是字符串，认为有标题行
-        return ($stringCount / $totalCount) > 0.5;
+        // 如果字符串数量大于数字数量，或者字符串数量超过30%，认为有标题行
+        return ($stringCount > $numericCount) || ($stringCount / $totalCount) > 0.3;
     }
 
     public function chunkSize(): int
