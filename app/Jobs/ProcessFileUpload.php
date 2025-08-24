@@ -219,9 +219,8 @@ class ExcelImportHandler implements ToArray, WithChunkReading
                 foreach (array_values($row) as $index => $value) {
                     if (isset($this->headers[$index])) {
                         $processedRow[$this->headers[$index]] = $value;
-                    } else {
-                        $processedRow['column' . ($index + 1)] = $value;
                     }
+                    // 移除创建column1、column2等的逻辑，只保留有标题的列
                 }
                 $this->processor->processRow($processedRow);
             } else {

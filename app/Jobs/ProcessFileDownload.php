@@ -138,9 +138,8 @@ class ProcessFileDownload implements ShouldQueue
                             }
                         }
                     }
-                    // 确保列的顺序是固定的
+                    // 确保列的顺序是固定的，但不要按字母排序，保持原始顺序
                     $this->allColumns = array_keys($this->allColumns);
-                    sort($this->allColumns); // 按字母顺序排序，确保一致性
                 }
 
                 public function array(): array

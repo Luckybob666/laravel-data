@@ -92,36 +92,38 @@ class LargeFileProcessor
      */
     private function extractOtherData($row)
     {
-        if (isset($row['phone'])) {
-            unset($row['phone']);
+        // 检查是否有字符串键（表示有标题行）
+        $hasStringKeys = false;
+        foreach ($row as $key => $value) {
+            if (is_string($key) && !is_numeric($key)) {
+                $hasStringKeys = true;
+                break;
+            }
+        }
+        
+        if ($hasStringKeys) {
+            // 有标题行，保持原有的键值对格式，但移除手机号字段
+            if (isset($row['phone'])) {
+                unset($row['phone']);
+            } else {
+                // 如果没有phone字段，移除第一列（手机号）
+                $keys = array_keys($row);
+                if (!empty($keys)) {
+                    unset($row[$keys[0]]);
+                }
+            }
             return $row;
         } else {
-            // 如果没有phone字段，取除第一列外的其他数据
+            // 没有标题行，取除第一列外的其他数据，使用column1、column2等作为键
             $values = array_values($row);
             $otherData = array_slice($values, 1);
             
-            // 检查是否有字符串键（表示有标题行）
-            $hasStringKeys = false;
-            foreach ($row as $key => $value) {
-                if (is_string($key) && !is_numeric($key)) {
-                    $hasStringKeys = true;
-                    break;
-                }
+            $result = [];
+            foreach ($otherData as $index => $value) {
+                $key = 'column' . ($index + 1);
+                $result[$key] = $value;
             }
-            
-            if ($hasStringKeys) {
-                // 有标题行，保持原有的键值对格式
-                unset($row[0]); // 移除第一列（手机号）
-                return $row;
-            } else {
-                // 没有标题行，使用column1、column2等作为键
-                $result = [];
-                foreach ($otherData as $index => $value) {
-                    $key = 'column' . ($index + 1);
-                    $result[$key] = $value;
-                }
-                return $result;
-            }
+            return $result;
         }
     }
 
