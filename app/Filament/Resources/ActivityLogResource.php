@@ -81,6 +81,9 @@ class ActivityLogResource extends Resource
             ->recordUrl(null)
             ->defaultSort('id', 'desc')
             ->columns([
+                TextColumn::make('id')
+                    ->label('ID')
+                    ->sortable(),
                 TextColumn::make('action')
                     ->label('操作类型')
                     ->formatStateUsing(fn (string $state): string => match ($state) {
