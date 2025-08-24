@@ -58,6 +58,9 @@ class DownloadRecordResource extends Resource
             ->recordUrl(null)
             ->defaultSort('id', 'desc')
             ->columns([
+                TextColumn::make('id')
+                    ->label('ID')
+                    ->sortable(),
                 TextColumn::make('filename')
                     ->label('文件名')
                     ->searchable()
