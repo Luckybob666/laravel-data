@@ -132,12 +132,15 @@ class ProcessFileDownload implements ShouldQueue
                 {
                     // 获取所有可能的列标题（从data字段中获取原始表头）
                     foreach ($this->records as $record) {
-                        if ($record->data) {
+                        if ($record->data && is_array($record->data)) {
                             foreach ($record->data as $key => $value) {
                                 $this->allColumns[$key] = true;
                             }
                         }
                     }
+                    // 确保列的顺序是固定的
+                    $this->allColumns = array_keys($this->allColumns);
+                    sort($this->allColumns); // 按字母顺序排序，确保一致性
                 }
 
                 public function array(): array
@@ -146,10 +149,13 @@ class ProcessFileDownload implements ShouldQueue
                     
                     // 准备数据行
                     foreach ($this->records as $record) {
-                        $row = [$record->phone];
-
-                        // 添加JSON数据列
-                        foreach (array_keys($this->allColumns) as $column) {
+                        $row = [];
+                        
+                        // 添加手机号码作为第一列
+                        $row[] = $record->phone;
+                        
+                        // 按照固定的列顺序添加JSON数据
+                        foreach ($this->allColumns as $column) {
                             $row[] = $record->data[$column] ?? '';
                         }
 
@@ -162,7 +168,7 @@ class ProcessFileDownload implements ShouldQueue
                 public function headings(): array
                 {
                     $headers = ['手机号码'];
-                    foreach (array_keys($this->allColumns) as $column) {
+                    foreach ($this->allColumns as $column) {
                         $headers[] = $column;
                     }
                     return $headers;
