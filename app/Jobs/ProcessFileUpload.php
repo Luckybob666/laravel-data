@@ -37,8 +37,16 @@ class ProcessFileUpload implements ShouldQueue
     {
         $this->uploadRecordId = $uploadRecordId;
         $this->dataType = $dataType;
-        $this->timeout = 3600; // 增加到60分钟超时
-        $this->tries = 3; // 重试3次
+        $this->timeout = 7200; // 与 worker 超时保持一致（2小时）
+        $this->tries = 5; // 增加最大重试次数，降低偶发超时导致失败
+    }
+
+    /**
+     * 重试退避策略（秒）
+     */
+    public function backoff(): array
+    {
+        return [60, 300, 600]; // 1min, 5min, 10min
     }
 
     /**
@@ -89,11 +97,19 @@ class ProcessFileUpload implements ShouldQueue
             // 清理内存
             $processor->cleanup();
 
-            // 更新上传记录
+            // 使用数据库回算成功与重复数量
+            $dbSuccessCount = match($this->dataType) {
+                'raw' => RawDataRecord::where('upload_record_id', $uploadRecord->id)->count(),
+                'used' => UsedDataRecord::where('upload_record_id', $uploadRecord->id)->count(),
+                default => DataRecord::where('upload_record_id', $uploadRecord->id)->count(),
+            };
+            $recalculatedDuplicateCount = max(0, ($stats['total_rows'] ?? 0) - $dbSuccessCount);
+
+            // 更新上传记录（以数据库回算为准）
             $uploadRecord->update([
-                'total_count' => $stats['total_rows'], // 使用总行数
-                'success_count' => $stats['success_count'],
-                'duplicate_count' => $stats['duplicate_count'],
+                'total_count' => $stats['total_rows'],
+                'success_count' => $dbSuccessCount,
+                'duplicate_count' => $recalculatedDuplicateCount,
                 'status' => $statusClass::STATUS_COMPLETED,
             ]);
 
@@ -110,13 +126,13 @@ class ProcessFileUpload implements ShouldQueue
             };
             ActivityLog::log(
                 'upload',
-                "大文件上传处理完成（{$dataTypeText}），上传ID：{$uploadRecord->id}，总条数：{$stats['total_rows']}，成功：{$stats['success_count']}，重复：{$stats['duplicate_count']}",
+                "大文件上传处理完成（{$dataTypeText}），上传ID：{$uploadRecord->id}，总条数：{$stats['total_rows']}，成功：{$dbSuccessCount}，重复：{$recalculatedDuplicateCount}",
                 [
                     'upload_record_id' => $uploadRecord->id,
                     'data_type' => $this->dataType,
                     'total_count' => $stats['total_rows'],
-                    'success_count' => $stats['success_count'],
-                    'duplicate_count' => $stats['duplicate_count'],
+                    'success_count' => $dbSuccessCount,
+                    'duplicate_count' => $recalculatedDuplicateCount,
                     'processing_time' => microtime(true) - LARAVEL_START,
                 ],
                 $uploadRecord
@@ -126,8 +142,8 @@ class ProcessFileUpload implements ShouldQueue
                 'upload_record_id' => $uploadRecord->id,
                 'data_type' => $this->dataType,
                 'total_count' => $stats['total_rows'],
-                'success_count' => $stats['success_count'],
-                'duplicate_count' => $stats['duplicate_count'],
+                'success_count' => $dbSuccessCount,
+                'duplicate_count' => $recalculatedDuplicateCount,
                 'final_memory_usage' => memory_get_usage(true) / 1024 / 1024 / 1024 . 'GB'
             ]);
 
@@ -175,6 +191,33 @@ class ProcessFileUpload implements ShouldQueue
             }
 
             throw $e;
+        }
+    }
+
+    /**
+     * 所有重试失败后的回调
+     */
+    public function failed(\Throwable $e): void
+    {
+        try {
+            $model = match($this->dataType) {
+                'raw' => RawUploadRecord::class,
+                'used' => UsedUploadRecord::class,
+                default => UploadRecord::class,
+            };
+            if ($uploadRecord = $model::find($this->uploadRecordId)) {
+                $statusClass = match($this->dataType) {
+                    'raw' => RawUploadRecord::class,
+                    'used' => UsedUploadRecord::class,
+                    default => UploadRecord::class,
+                };
+                $uploadRecord->update([
+                    'status' => $statusClass::STATUS_FAILED,
+                    'error_message' => $e->getMessage(),
+                ]);
+            }
+        } catch (\Throwable $ignored) {
+            // 失败回调中避免再次抛出异常
         }
     }
 }
