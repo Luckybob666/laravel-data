@@ -97,12 +97,8 @@ class ProcessFileUpload implements ShouldQueue
             // 清理内存
             $processor->cleanup();
 
-            // 使用数据库回算成功与重复数量
-            $dbSuccessCount = match($this->dataType) {
-                'raw' => RawDataRecord::where('upload_record_id', $uploadRecord->id)->count(),
-                'used' => UsedDataRecord::where('upload_record_id', $uploadRecord->id)->count(),
-                default => DataRecord::where('upload_record_id', $uploadRecord->id)->count(),
-            };
+            // 使用处理器统计结果（更高效），避免额外的全表 COUNT
+            $dbSuccessCount = $stats['success_count'];
             $recalculatedDuplicateCount = max(0, ($stats['total_rows'] ?? 0) - $dbSuccessCount);
 
             // 更新上传记录（以数据库回算为准）

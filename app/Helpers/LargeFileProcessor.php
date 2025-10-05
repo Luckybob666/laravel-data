@@ -12,9 +12,8 @@ class LargeFileProcessor
 {
     private $dataType;
     private $uploadRecordId;
-    private $batchSize = 1000; // 减少批量大小以降低内存使用
-    private $existingPhones = [];
-    private $phoneBatch = [];
+    private $batchSize = 3000; // 增大批量以提升吞吐
+    private $currentBatchPhones = [];
     private $batchData = [];
     private $successCount = 0;
     private $duplicateCount = 0;
@@ -41,16 +40,8 @@ class LargeFileProcessor
             return;
         }
 
-        // 添加到手机号批次
-        $this->phoneBatch[] = $phone;
-
-        // 当手机号批次达到一定大小时，批量检查重复
-        if (count($this->phoneBatch) >= 500) {
-            $this->checkExistingPhonesBatch();
-        }
-
-        // 检查手机号码是否已存在（包括当前批次中的重复）
-        if (in_array($phone, $this->existingPhones) || $this->isDuplicateInCurrentBatch($phone)) {
+        // 仅去重当前批次，避免全量预查询带来的高开销
+        if ($this->isDuplicateInCurrentBatch($phone)) {
             $this->duplicateCount++;
             return;
         }
@@ -64,7 +55,6 @@ class LargeFileProcessor
             'updated_at' => now(),
         ];
 
-        $this->successCount++;
         $this->processedRows++;
 
         // 当达到批量大小时，执行批量插入
@@ -128,39 +118,6 @@ class LargeFileProcessor
     }
 
     /**
-     * 批量检查已存在的手机号
-     */
-    private function checkExistingPhonesBatch()
-    {
-        if (empty($this->phoneBatch)) {
-            return;
-        }
-
-        // 批量查询已存在的手机号
-        $existingPhones = $this->getExistingPhonesBatch($this->phoneBatch);
-        
-        // 将已存在的手机号添加到缓存中
-        foreach ($existingPhones as $phone) {
-            $this->existingPhones[] = $phone;
-        }
-
-        // 清空手机号批次
-        $this->phoneBatch = [];
-    }
-
-    /**
-     * 批量查询已存在的手机号
-     */
-    private function getExistingPhonesBatch($phones)
-    {
-        return match($this->dataType) {
-            'raw' => RawDataRecord::whereIn('phone', $phones)->pluck('phone')->toArray(),
-            'used' => UsedDataRecord::whereIn('phone', $phones)->pluck('phone')->toArray(),
-            default => DataRecord::whereIn('phone', $phones)->pluck('phone')->toArray(),
-        };
-    }
-
-    /**
      * 批量插入数据
      */
     private function insertBatch()
@@ -186,11 +143,12 @@ class LargeFileProcessor
                 //     'memory_usage' => $this->formatMemoryUsage()
                 // ]);
                 
-                // 更新成功计数
-                $this->successCount = $this->successCount - (count($this->batchData) - $insertedCount);
+                // 更新计数（以数据库写入结果为准）
+                $this->successCount += $insertedCount;
                 $this->duplicateCount += (count($this->batchData) - $insertedCount);
                 
                 $this->batchData = [];
+                $this->currentBatchPhones = [];
             } catch (\Exception $e) {
                 // Log::error("批量插入失败", [
                 //     'upload_record_id' => $this->uploadRecordId,
@@ -222,8 +180,12 @@ class LargeFileProcessor
         
         foreach ($this->batchData as $data) {
             try {
-                DB::table($tableName)->insertOrIgnore([$data]);
-                $successCount++;
+                $affected = DB::table($tableName)->insertOrIgnore([$data]);
+                if ($affected === 1) {
+                    $successCount++;
+                } else {
+                    $duplicateCount++;
+                }
             } catch (\Exception $e) {
                 Log::warning("单条插入失败", [
                     'phone' => $data['phone'],
@@ -241,10 +203,11 @@ class LargeFileProcessor
         // ]);
         
         // 更新计数
-        $this->successCount = $this->successCount - (count($this->batchData) - $successCount);
+        $this->successCount += $successCount;
         $this->duplicateCount += $duplicateCount;
         
         $this->batchData = [];
+        $this->currentBatchPhones = [];
     }
 
     /**
@@ -252,9 +215,6 @@ class LargeFileProcessor
      */
     public function getStats()
     {
-        // 检查剩余的手机号批次
-        $this->checkExistingPhonesBatch();
-        
         // 插入剩余的数据
         $this->insertBatch();
         
@@ -284,8 +244,7 @@ class LargeFileProcessor
      */
     public function cleanup()
     {
-        $this->existingPhones = [];
-        $this->phoneBatch = [];
+        $this->currentBatchPhones = [];
         $this->batchData = [];
         
         // 强制垃圾回收
@@ -299,12 +258,10 @@ class LargeFileProcessor
      */
     private function isDuplicateInCurrentBatch($phone)
     {
-        // 检查当前批次数据中是否已有相同手机号
-        foreach ($this->batchData as $data) {
-            if ($data['phone'] === $phone) {
-                return true;
-            }
+        if (isset($this->currentBatchPhones[$phone])) {
+            return true;
         }
+        $this->currentBatchPhones[$phone] = true;
         return false;
     }
 }
