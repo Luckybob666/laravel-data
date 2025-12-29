@@ -82,6 +82,44 @@ class ProcessFileUpload implements ShouldQueue
                 throw new \Exception("文件不存在：{$fullPath}");
             }
 
+            // 验证文件是否可读
+            if (!is_readable($fullPath)) {
+                throw new \Exception("文件不可读：{$fullPath}，请检查文件权限");
+            }
+
+            // 验证文件大小
+            $fileSize = filesize($fullPath);
+            if ($fileSize === false || $fileSize === 0) {
+                throw new \Exception("文件为空或无法获取文件大小：{$fullPath}");
+            }
+
+            // 验证文件扩展名
+            $extension = strtolower(pathinfo($fullPath, PATHINFO_EXTENSION));
+            $allowedExtensions = ['xlsx', 'xls', 'csv'];
+            if (!in_array($extension, $allowedExtensions)) {
+                throw new \Exception("不支持的文件格式：{$extension}，支持的格式：xlsx, xls, csv");
+            }
+
+            // 验证文件是否为有效的 Excel 文件（通过检查文件头）
+            $fileHandle = fopen($fullPath, 'rb');
+            if ($fileHandle === false) {
+                throw new \Exception("无法打开文件：{$fullPath}");
+            }
+            
+            $fileHeader = fread($fileHandle, 8);
+            fclose($fileHandle);
+            
+            // Excel 文件头验证
+            // XLSX: PK\x03\x04 (ZIP 格式)
+            // XLS: \xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1 (OLE2 格式)
+            // CSV: 无特定头，但至少应该有内容
+            if ($extension === 'xlsx' && substr($fileHeader, 0, 2) !== 'PK') {
+                throw new \Exception("文件格式验证失败：文件扩展名为 .xlsx，但文件内容不是有效的 Excel 2007+ 格式（应为 ZIP 格式）");
+            }
+            if ($extension === 'xls' && substr($fileHeader, 0, 8) !== "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1") {
+                throw new \Exception("文件格式验证失败：文件扩展名为 .xls，但文件内容不是有效的 Excel 97-2003 格式");
+            }
+
             // 创建大文件处理器
             $processor = new LargeFileProcessor($this->dataType, $uploadRecord->id);
 
@@ -89,7 +127,13 @@ class ProcessFileUpload implements ShouldQueue
             $importHandler = new ExcelImportHandler($processor);
 
             // 使用流式读取器，增加批量大小
-            Excel::import($importHandler, $fullPath);
+            try {
+                Excel::import($importHandler, $fullPath);
+            } catch (\Maatwebsite\Excel\Exceptions\NoTypeDetectedException $e) {
+                throw new \Exception("无法识别文件类型：{$fullPath}。可能原因：1) 文件损坏；2) 文件格式不匹配（扩展名与实际内容不符）；3) 文件不是有效的 Excel 文件。文件大小：{$fileSize} 字节，扩展名：{$extension}");
+            } catch (\PhpOffice\PhpSpreadsheet\Reader\Exception $e) {
+                throw new \Exception("读取 Excel 文件失败：{$e->getMessage()}。文件路径：{$fullPath}，文件大小：{$fileSize} 字节");
+            }
 
             // 获取处理统计
             $stats = $processor->getStats();
